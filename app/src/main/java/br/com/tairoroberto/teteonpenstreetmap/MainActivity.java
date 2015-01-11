@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.location.Address;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -13,8 +14,16 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.Toast;
 
+import org.osmdroid.bonuspack.location.GeocoderNominatim;
 import org.osmdroid.bonuspack.overlays.Marker;
+import org.osmdroid.bonuspack.overlays.Polyline;
+import org.osmdroid.bonuspack.routing.OSRMRoadManager;
+import org.osmdroid.bonuspack.routing.Road;
+import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.events.MapListener;
 import org.osmdroid.events.ScrollEvent;
 import org.osmdroid.events.ZoomEvent;
@@ -25,6 +34,11 @@ import org.osmdroid.views.MapView;
 import org.osmdroid.views.Projection;
 import org.osmdroid.views.overlay.Overlay;
 import org.osmdroid.views.overlay.PathOverlay;
+
+import java.io.IOException;
+import java.security.Policy;
+import java.util.ArrayList;
+import java.util.List;
 
 
 public class MainActivity extends ActionBarActivity implements LocationListener{
@@ -166,9 +180,10 @@ public class MainActivity extends ActionBarActivity implements LocationListener{
         //Pega as atualizaçãoes do GPS
        // locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,0,0,this);
 
-
     }
 
+
+    //Quando a localização mudar adicionamos novamente o marcador ao mapView
     @Override
     public void onLocationChanged(Location location) {
         GeoPoint geoPoint = new GeoPoint(location.getLatitude(),location.getLongitude());
@@ -224,5 +239,72 @@ public class MainActivity extends ActionBarActivity implements LocationListener{
 
             return super.onSingleTapConfirmed(motionEvent, mapView);
         }
+    }
+
+    //Metodo paara pegar a rota de um ponto a outro
+    public void getRoute(View view){
+        EditText edtOrigem = (EditText)findViewById(R.id.edtOrigem);
+        EditText edtDestino = (EditText)findViewById(R.id.edtDestino);
+
+        final String origem = edtOrigem.getText().toString();
+        final String destino = edtDestino.getText().toString();
+
+        new Thread(){
+            public void run(){
+                GeoPoint geoPointStart = getLocation(origem);
+                GeoPoint geoPointEnd = getLocation(destino);
+
+                //Se a localização do endereço foe diferente de null desenhamos a rota
+                if (geoPointStart != null && geoPointEnd != null){
+                    drawRoute(geoPointStart,geoPointEnd);
+                }else{
+                    Toast.makeText(MainActivity.this,"Falha ao buscar rota de endereço",Toast.LENGTH_SHORT).show();
+                }
+            }
+        }.start();
+
+    }
+
+    public GeoPoint getLocation(String location){
+        GeocoderNominatim geocoderNominatim = new GeocoderNominatim(MainActivity.this);
+        GeoPoint geoPoint = null;
+        List<Address> addresses = new ArrayList<Address>();
+
+        try {
+            addresses = geocoderNominatim.getFromLocationName(location,1);
+
+            if (addresses != null && addresses.size() > 0 ){
+                Log.i("Script","Rua :"+addresses.get(0).getThoroughfare());
+                Log.i("Script","Cidade :"+addresses.get(0).getSubAdminArea());
+                Log.i("Script","Estado :"+addresses.get(0).getAdminArea());
+                Log.i("Script","País :"+addresses.get(0).getCountryName());
+
+                geoPoint = new GeoPoint(addresses.get(0).getLatitude(),addresses.get(0).getLongitude());
+            }
+        }catch (IOException e){
+            e.printStackTrace();
+        }
+
+
+        return geoPoint;
+    }
+
+
+    public void drawRoute(GeoPoint start,GeoPoint end){
+        RoadManager roadManager = new OSRMRoadManager();
+        ArrayList<GeoPoint> points = new ArrayList<GeoPoint>();
+        points.add(start);
+        points.add(end);
+        Road road = roadManager.getRoad(points);
+
+        final Polyline roadOverlay = RoadManager.buildRoadOverlay(road,MainActivity.this);
+
+        //Abre a Thread principal para desenhar a rota
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                mapView.getOverlays().add(roadOverlay);
+            }
+        });
     }
 }
